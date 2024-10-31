@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Algorand Escrow</title>
+
+    <!-- Algorand SDK CDN -->
+    <script src="https://unpkg.com/algosdk/dist/browser/algosdk.min.js"></script>
+
+    <!-- Basic CSS for styling -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 400px;
+        }
+        h2 {
+            color: #333;
+        }
+        input[type="text"] {
+            width: 80%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        p {
+            color: #333;
+        }
+        #status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Escrow Interaction</h2>
+
+        <!-- Input to fund the escrow -->
+        <input type="text" id="fundAmount" placeholder="Amount to Fund (microAlgos)">
+        <button id="fundEscrowBtn">Fund Escrow</button>
+
+        <!-- Button to withdraw from the escrow -->
+        <button id="withdrawEscrowBtn">Withdraw from Escrow</button>
+
+        <p id="status"></p>
+    </div>
+
+    <script>
+        const algodToken = {
+            'X-API-Key': 'Your-API-Key-Here' // Replace with your actual API key
+        };
+        const algodServer = 'https://testnet-algorand.api.purestake.io/ps2';
+        const algodPort = '';
+
+        const algodClient = new algosdk.Algodv2(algodToken, algodServer, algodPort);
+
+        const senderMnemonic = 'Your-Sender-Mnemonic-Here'; // Replace with your mnemonic
+        const senderAccount = algosdk.mnemonicToSecretKey(senderMnemonic);
+
+        const escrowAddress = "Actual-Escrow-Contract-Address"; // Replace with the actual deployed contract address
+        const receiverAddress = "Receiver-Address-Here"; // Replace with the actual receiver's address
+
+        async function fundEscrow(amount) {
+            try {
+                let params = await algodClient.getTransactionParams().do();
+
+                let txn = {
+                    from: senderAccount.addr,
+                    to: escrowAddress,
+                    fee: algosdk.ALGORAND_MIN_TX_FEE,
+                    amount: parseInt(amount),
+                    firstRound: params.firstRound,
+                    lastRound: params.lastRound,
+                    genesisID: params.genesisID,
+                    genesisHash: params.genesisHash,
+                    note: undefined
+                };
+
+                let signedTxn = algosdk.signTransaction(txn, senderAccount.sk);
+                let tx = await algodClient.sendRawTransaction(signedTxn.blob).do();
+                document.getElementById("status").innerText = "Transaction ID: " + tx.txId;
+
+                await waitForConfirmation(tx.txId);
+                document.getElementById("status").innerText = "Escrow funded successfully!";
+            } catch (err) {
+                console.error(err);
+                document.getElementById("status").innerText = "Error funding escrow.";
+            }
+        }
+
+        async function withdrawEscrow() {
+            try {
+                let params = await algodClient.getTransactionParams().do();
+
+                let txn = {
+                    from: escrowAddress,
+                    to: receiverAddress,
+                    fee: algosdk.ALGORAND_MIN_TX_FEE,
+                    amount: 1000000, // Example amount to withdraw
+                    firstRound: params.firstRound,
+                    lastRound: params.lastRound,
+                    genesisID: params.genesisID,
+                    genesisHash: params.genesisHash,
+                    note: undefined
+                };
+
+                let signedTxn = algosdk.signTransaction(txn, senderAccount.sk);
+                let tx = await algodClient.sendRawTransaction(signedTxn.blob).do();
+                document.getElementById("status").innerText = "Transaction ID: " + tx.txId;
+
+                await waitForConfirmation(tx.txId);
+                document.getElementById("status").innerText = "Withdrawal successful!";
+            } catch (err) {
+                console.error(err);
+                document.getElementById("status").innerText = "Error withdrawing from escrow.";
+            }
+        }
+
+        async function waitForConfirmation(txId) {
+            let response = await algodClient.status().do();
+            let lastRound = response["last-round"];
+            while (true) {
+                const pendingInfo = await algodClient.pendingTransactionInformation(txId).do();
+                if (pendingInfo["confirmed-round"] !== null && pendingInfo["confirmed-round"] > 0) {
+                    console.log("Transaction confirmed in round", pendingInfo["confirmed-round"]);
+                    break;
+                }
+                lastRound++;
+                await algodClient.statusAfterBlock(lastRound).do();
+            }
+        }
+
+        document.getElementById('fundEscrowBtn').addEventListener('click', function() {
+            const amount = document.getElementById('fundAmount').value;
+            fundEscrow(amount);
+        });
+
+        document.getElementById('withdrawEscrowBtn').addEventListener('click', function() {
+            withdrawEscrow();
+        });
+    </script>
+    
+</body>
+</html>
